@@ -73,7 +73,7 @@ $results.data | foreach {
                 'properties.impactedServices[*].ServiceName' {$tmpServices=$allOf.'containsAny'}
 
             }
-            if ($allOf.anyOf.field) {Write-Warning "$tmpName - $tmpCategory";Write-warning $($allOf.anyOf | ConvertTo-Json)}
+            #if ($allOf.anyOf.field) {Write-Warning "$tmpName - $tmpCategory";Write-warning $($allOf.anyOf | ConvertTo-Json)}
             switch ($allOf.anyOf.field) {
 
                 'properties.incidentType' {
@@ -141,18 +141,20 @@ Function AssessHealthAlerts ($Alerts) {
     # Loop through all alerts
     $Alerts | ForEach-Object {
 
+        $Alert=$_
+        
+
         # Array of notes regarding this alert
         $Notes=@()
 
-        if ($Alerts.actions.count -lt 1) {
+        if ($Alert.actions.actiongroups.count -lt 1) {
             $Notes+="This alert does not seem to trigger any actions"
         }
 
         # Check if the alert convers at least one service
-        if ($Alerts.services -ne "" ) {
+        if ($Alert.services -ne "" ) {
             #Since the services attribute is not empty, some services have been selected.
 
-            $Alert=$_
 
 
             # Loop through each of our defined service types
@@ -166,7 +168,7 @@ Function AssessHealthAlerts ($Alerts) {
                 $ValidForThisService=$true 
 
                 $NeededSelections | foreach {
-                    if ($Alerts.Services -notcontains $_) {
+                    if ($Alert.Services -notcontains $_) {
 
                        #but if we find that something is missing, then make validforthisservice false
                        $ValidForThisService=$false
@@ -311,8 +313,16 @@ $ResourceTypeHash=@{
 
 
 # Get Health Alerts
-$Results=Get-ResourceByType -type 'microsoft.insights/activitylogalerts' -AccessToken $AccessToken
+if ((test-path .\HealthData.xml) -eq $true) {
+
+    $Results=Import-Clixml -Path .\HealthData.xml
+} else {
+
+    $Results=Get-ResourceByType -type 'microsoft.insights/activitylogalerts' -AccessToken $AccessToken
+}
+
 $HealthAlerts=CreateHealthAlertsArray -Results $Results | where Category -eq "ServiceHealth"
+
 # Process the Health alerts and assess them for validity
 $AssessedHealthAlerts=AssessHealthAlerts -Alerts $HealthAlerts
 
@@ -321,7 +331,15 @@ $AssessedHealthAlerts | ft Name,valid,ServicesValidFor,Regions,Notes
 # Iterate through each defined resource type, get a list of resources, and assess them.
 $ResourceTypeHash.keys | ForEach-Object {
 
-    $Results=Get-ResourceByType -type $_ -AccessToken $AccessToken
+    if ((test-path .\AppServicePlans.xml) -eq $true) {
+    
+        $Results=Import-Clixml -Path .\AppServicePlans.xml
+    } else {
+
+        $Results=Get-ResourceByType -type $_ -AccessToken $AccessToken
+    }
+
+
     $Resources=CreateResourceArray -Results $Results | where Subscription -eq 'f263b677-361a-4ec3-91d6-c4e05012c36b'
     AssessResources -Resources $Resources -HealthAlerts $HealthAlerts
     $Resources | ft name, subscription,Coverage
