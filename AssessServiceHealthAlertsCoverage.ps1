@@ -1,4 +1,4 @@
-﻿#Script Functions
+﻿#region Script Functions
 function Invoke-ResourceExplorerQuery ($KQL, $AccessToken) {
     $headers=@{
 
@@ -31,15 +31,35 @@ function Invoke-ARMAPIQuery ($Url) {
 
 }
 
-Function Get-ResourceByType ($type,$AccessToken){
+Function Get-ResourceByType ($type,$AccessToken,$SubscriptionFilter, $AppendKQLClause){
 
 Write-Warning "Getting list of resource type $type ..."
 
+If ($SubscriptionFilter.count -eq 0) {
 
 $KQL=@"
         resources | where type == '$type'
 "@
 # the line above is purposedly aligned to the left due to the here string requirement
+
+} else {
+
+
+
+$KQL=@"
+        resources | where type == '$type' | where subscriptionId matches regex "$($SubscriptionFilter -join '|')"
+"@
+# the line above is purposedly aligned to the left due to the here string requirement
+
+
+
+}
+
+if ($AppendKQLClause.Lenght -gt 0) {
+    $KQL += ' | ' + $AppendKQLClause
+
+}
+
 
 
 return (Invoke-ResourceExplorerQuery -AccessToken $AccessToken -KQL $KQL)
@@ -110,10 +130,10 @@ $results.data | foreach {
             Actions=$tmpActions
             Services=$tmpServices
             Regions=$tmpRegions
-            IncidentType=if ($tmpIncidentType -eq "") {"All"} else {$tmpIncidentType}
+            IncidentType=if ($tmpIncidentType -eq "" -or $tmpIncidentType -eq $null) {"All"} else {$tmpIncidentType}
             Category=$tmpCategory
             Subscriptions=$tmpSubscriptions
-            Valid=$false
+            Valid="False"
             ServicesValidFor=@()
             Notes=""
         }
@@ -140,6 +160,9 @@ $results.data | foreach {
             TypeDisplayName= ""
             AlertCoverage  = "None"
             AppInsights    = "N/A"
+            DiagnosticMetrics=$false
+            DiagnosticLogs=$false
+            LogAnalyticsWorkspace=""
             CoveredBy      = @()
             Notes          = ""
         }
@@ -152,8 +175,8 @@ $results.data | foreach {
 Function CreateDataTable ($Data,$Props) {
 
 
-    #$Props=($Data | get-member | where MemberType -eq "NoteProperty").Name
-
+    $Props=($Data | get-member | where MemberType -eq "NoteProperty").Name
+    
     $DTData=@()
 
     #For each row in the PSOBject
@@ -186,8 +209,69 @@ Function CreateDataTable ($Data,$Props) {
 $DTComplete
 }
 
+#endregion
 
-# Assessment functions
+#region Workbooks_Functions
+$Counter=0
+Function New-AzureWorkbook {
+
+    [pscustomobject]@{
+
+        version='Notebook/1.0'
+        items=@{}
+        fallbackResourceIds=@("Azure Monitor")
+        '$schema'='https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json'
+
+    } 
+
+}
+
+Function Add-AzureWorkbookTextItem ($MarkDownString) {
+
+
+      [pscustomobject]@{
+
+        type=1
+        content=[pscustomobject]@{
+            json=$MarkDownString
+        }
+        name="text - $Counter"
+
+      } 
+      $Counter++
+}
+
+Function Add-AzureWorkbookJSONQuery ($JsonQuery) {
+
+      #Wrap the Json query into the needed object
+      $WrappedJsonQuery=$(@{version="1.0.0";content=$JsonQuery} | ConvertTo-Json -Depth 99 -Compress)
+
+
+      [pscustomobject]@{
+
+        type=3
+        content=@{
+            "version"       = "KqlItem/1.0"
+            "query"         = $WrappedJsonQuery
+            "size"          = 0
+            "showExportToExcel" = "true"
+            "queryType"     = 8
+            "gridSettings"  = [pscustomobject]@{
+                 "rowLimit" = 1000
+                 "filter"   = "true"
+                 
+            }
+        }
+        name="text - $Counter"
+
+      } 
+      $Counter++
+}
+
+
+#endregion
+
+#region Assessment_functions
 Function AssessHealthAlerts ($Alerts) {
 
 
@@ -221,7 +305,7 @@ Function AssessHealthAlerts ($Alerts) {
                 #Start with the assumption that the alert is valid for service
                 $ValidForThisService=$true 
 
-                $NeededSelections | foreach {
+                $NeededSelections | ForEach-Object {
                     if ($Alert.Services -notcontains $_) {
 
                        #but if we find that something is missing, then make validforthisservice false
@@ -247,37 +331,68 @@ Function AssessHealthAlerts ($Alerts) {
         # Finally, mark the alert valid if no other issues were found,
         # or invalid and provide some notes.
         If ($Notes.count -eq 0) {
-            $Alert.Valid = $true
+            $Alert.Valid = "True"
             
         } else {
-            $Alert.Valid = $false
+            $Alert.Valid = "False"
             $Alert.Notes += "$($Notes -join ', ')"
         }
         
+
+     [PSCustomObject]@{
+   
+        AlertRule        = $Alert.ID
+        Valid            = $Alert.Valid
+        Actions          = if ($Alert.Actions -eq "") {"None"} else {$Alert.Actions}
+        Regions          = if ($Alert.Regions -eq "") {"All"} else {$Alert.Regions}
+        EventTypes       = if ($Alert.IncidentType -eq "") {"All"} else {$Alert.IncidentType}
+        Services         = if ($Alert.Services -eq "") {"All"} else {$Alert.Services}
+        Subscription     = $Alert.Subscriptions
+  
+     }
         
 
    }
 
-   return $Alerts
+   
+
+ 
+
+
 
 }
 
 Function AssessSubscriptions ($Subs) {
 
- $Subs | Add-Member -MemberType NoteProperty -Name AlertCoverage -Value "None"  -Force
  
  $Subs | ForEach-Object {
 
         $Sub=$_
 
-        $AlertsThatCoverMe=@()
-        $AlertsThatCoverMe=$HealthAlerts | where Valid -eq $true | where Subscriptions -Contains $Sub.SubscriptionId 
+        #if ($Sub.displayname -match "lufeliz") {write-warning "break";$host.EnterNestedPrompt()}
 
         
-        $Sub.AlertCoverage=if ($AlertsThatCoverMe.IncidentType -contains "All") {"All"} else {$AlertsThatCoverMe.IncidentType | sort -Unique}
-        If ($Sub.AlertCoverage -eq "") {$Sub.AlertCoverage -eq "None"}
-  }   
 
+        $AlertsThatCoverMe=@()
+        $AlertsThatCoverMe=$AssessedHealthAlerts | where Valid -eq "True" | where Subscription -Contains $Sub.SubscriptionId 
+
+        $Coverage=""
+        $Coverage=if ($AlertsThatCoverMe.EventTypes -contains "All") {"All"} else {$AlertsThatCoverMe.EventTypes | Sort-Object -Unique}
+        If ($Coverage -eq "") {$Coverage = "None"}
+
+        [PSCustomObject]@{
+        
+            Subscription=$Sub.id
+            Name=$Sub.DisplayName
+            State=$Sub.State
+            AlertCoverage=$Coverage
+            CoveredBy=($AlertsThatCoverMe.AlertRule -split '/')[-1] -join ', '
+
+        }
+        
+        
+        
+  }   
 
 
 }
@@ -295,6 +410,7 @@ Function AssessResources ($Resources,$HealthAlerts) {
             # Custom Settings
             $CheckForAlert=$ResourceTypeHash[$Resource.Type].AlertCheck
             $CheckForInsights=$ResourceTypeHash[$Resource.Type].InsightsCheck
+            $DiagCheck=$ResourceTypeHash[$Resource.Type].DiagCheck
 
             # Add a friendly display name for the type
             $Resource.TypeDisplayName=$ResourceTypeHash[$Resource.Type].Name
@@ -305,6 +421,7 @@ Function AssessResources ($Resources,$HealthAlerts) {
             
             $CheckForAlert=$True
             $CheckForInsights=$False
+            $DiagCheck=$False
 
             # Add a friendly display name for the type
             $Resource.TypeDisplayName=$Resource.Type
@@ -321,11 +438,46 @@ Function AssessResources ($Resources,$HealthAlerts) {
                 $Resource.AppInsights=if ($AppInsights.Name -contains $Resource.Name) {"Enabled"} else {"Disabled"}
         }
 
+        If ($DiagCheck -eq $true) {
+
+            Write-warning "    -  Getting diagnostics info for $($Resource.Name)"
+
+            $URL = "https://management.azure.com" + $Resource.ID + "/providers/Microsoft.Insights/diagnosticSettings?api-version=2021-05-01-preview"
+            
+            $DiagResults=Invoke-ARMAPIQuery -Url $URL 
+
+            $tmpMetricCheck=0
+            $tmpLogCheck=0
+            $tmpLawIds=@()
+            
+            $DiagResults | foreach {
+
+                if ($DiagResults.value.properties.metrics.count -gt 0 -and $result.value.properties.workspaceId.count -gt 0) {
+                    $tmpMetricCheck++
+                }
+
+                if ($DiagResults.value.properties.logs.count -gt 0 -and $result.value.properties.workspaceId.count -gt 0) {
+                    $tmpLogCheck++
+                }
+
+                if ($result.value.properties.workspaceId.count -gt 0) {
+                    $tmpLawIds+=$result.value.properties.workspaceId
+                }
+
+            }
+
+            
+            $Resource.DiagnosticMetrics=if ($tmpMetricCheck -gt 0) {$true} else {$false}
+            $Resource.DiagnosticLogs=if ($tmpLogCheck -gt 0) {$true} else {$false}
+            $Resource.LogAnalyticsWorkspace=$tmpLawIds
+
+        }
+
         # Check for Service Health Alerts
         If ($CheckForAlert -eq $true) {
 
             $tmpAlerts1=@()
-            $tmpAlerts1=$HealthAlerts | where Valid -eq $true | where Subscriptions -Contains $Resource.Subscription 
+            $tmpAlerts1=$HealthAlerts | where Valid -eq "True" | where Subscriptions -Contains $Resource.Subscription 
 
         
 
@@ -347,7 +499,7 @@ Function AssessResources ($Resources,$HealthAlerts) {
                     # We found Health Alerts that cover this resource type
                     # Therefore lets mark this resource covered!
              
-                        $Resource.AlertCoverage=if ($AlertsThatCoverMe.IncidentType -contains "All") {"All"} else {$AlertsThatCoverMe.IncidentType | sort -Unique}
+                        $Resource.AlertCoverage=if ($AlertsThatCoverMe.IncidentType -contains "All") {"All"} else {$AlertsThatCoverMe.IncidentType | Sort-Object -Unique}
                         $Resource.Notes="Covered by $($AlertsThatCoverMe.Name -join ', ')"
                         $Resource.CoveredBy=$AlertsThatCoverMe
 
@@ -373,35 +525,45 @@ Function AssessResources ($Resources,$HealthAlerts) {
 
 }
 
+Function AccessTotals() {
 
+    [PSCustomObject]@{
+        
+        Metric="Subscriptions: Require Coverage"
+        Count= ($Subscriptions | Where AlertCoverage -eq 'None').count
+    
 
+    }
 
+        [PSCustomObject]@{
+        
+        Metric="Service Health Alerts: Incomplete"
+        Count= ($AssessedHealthAlerts | where valid -ne "True").count
+    
+      
+    }
 
+        [PSCustomObject]@{
+        
+        Metric="App Service Plan: No Diagnostics"
+        Count= ($ResourceReport | where Type -eq 'microsoft.web/serverfarms' | where {$_.AlertCoverage -eq 'None' -or $_.DiagnosticMetrics -eq 'False' -or $_.DiagnosticLogs -eq 'False'}).count 
 
+    
+    }
 
-# MAIN starts
+    [PSCustomObject]@{
+        
+        Metric="Apps with no App Insights or Diagnostics"
+        Count= ($ResourceReport | where Type -ne 'microsoft.web/serverfarms' | where {$_.AppInsights -eq 'False' -or $_.DiagnosticMetrics -eq 'False' -or $_.DiagnosticLogs -eq 'False'}).count 
+       
+   
+    }
 
-
-
-#Get Access token
-
-#Using PowerShell Az Module
-if ($AccessToken -eq $null) {
-    $currentAzureContext = Get-AzContext
-    $azureRmProfile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile;
-    $profileClient = New-Object Microsoft.Azure.Commands.ResourceManager.Common.RMProfileClient($azureRmProfile);
-    $AccessToken=$profileClient.AcquireAccessToken($currentAzureContext.Subscription.TenantId).AccessToken;
 }
 
-#Using the AZ Util
-#if ($AccessToken -eq $null) {
-#    $AccessToken=(az account get-access-token | convertfrom-json).accessToken
-#}
+#endregion
 
-
-
- 
-# Script Global Variables
+#region Script_Global_Variables
 # In the future, this hash will be read from a file.
 $ResourceTypeHash=@{
 
@@ -416,6 +578,7 @@ $ResourceTypeHash=@{
                     )
                 InsightsCheck=$False
                 AlertCheck=$true
+                DiagCheck=$true
 
     }
 
@@ -430,6 +593,7 @@ $ResourceTypeHash=@{
                     )
                 InsightsCheck=$true
                 AlertCheck=$false
+                DiagCheck=$true
 
     }
 
@@ -444,86 +608,157 @@ $ResourceTypeHash=@{
                     )
                 InsightsCheck=$true
                 AlertCheck=$false
+                DiagCheck=$true
 
     }
 
     
 }
+#endregion
 
+
+
+#region MAIN
+
+$FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
+
+
+#Get Access token
+#Using PowerShell Az Module
+
+    $currentAzureContext = Get-AzContext
+    $azureRmProfile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile;
+    $profileClient = New-Object Microsoft.Azure.Commands.ResourceManager.Common.RMProfileClient($azureRmProfile);
+    $AccessToken=$profileClient.AcquireAccessToken($currentAzureContext.Subscription.TenantId).AccessToken;
+
+
+#Using the AZ Util
+#if ($AccessToken -eq $null) {
+#    $AccessToken=(az account get-access-token | convertfrom-json).accessToken
+#}
 
 
 
 # Get Health Alerts
-if ((test-path .\HealthData.xml) -eq $true) {
-
-    $Results=Import-Clixml -Path .\HealthData.xml
-} else {
-
-    $Results=Get-ResourceByType -type 'microsoft.insights/activitylogalerts' -AccessToken $AccessToken
-}
-
-# need to filter servicehealth in KQL query
-$HealthAlerts=CreateHealthAlertsArray -Results $Results | where Category -eq "ServiceHealth"
 
 
-# Get App insights data
-$AppInsights=(Get-ResourceByType -type 'microsoft.insights/components' -AccessToken $AccessToken).data
+    $Results=Get-ResourceByType -type 'microsoft.insights/activitylogalerts' -AccessToken $AccessToken -AppendKQLClause 'extend category = properties.condition.allOf[0].equals | where category == "ServiceHealth"'
 
-
-# Gather Subscription information
-$Subs= (Invoke-ARMAPIQuery  "https://management.azure.com/subscriptions?api-version=2020-01-01").value
-AssessSubscriptions -Subs $Subs
-
-
-# Process the Health alerts and assess them for validity
-$AssessedHealthAlerts=AssessHealthAlerts -Alerts $HealthAlerts
-
-#$AssessedHealthAlerts | fl Name,valid,ServicesValidFor,Regions,IncidentType,Notes
-
-
-#CreateDataTable -Data $AssessedHealthAlerts  -Props @("Name","Actions","Services","Regions","IncidentType","Subscriptions","Valid","ServicesValidFor","Notes" )
-
-
-
-
-# Iterate through each defined resource type, get a list of resources, and assess them.
-$ResourceReport=@()
-$ResourceTypeHash.keys | ForEach-Object {
-
-    if ((test-path .\AppServicePlans.xml) -eq $true) {
     
-        $Results=Import-Clixml -Path .\AppServicePlans.xml
-    } else {
 
-        $Results=Get-ResourceByType -type $_ -AccessToken $AccessToken
+    $HealthAlerts=CreateHealthAlertsArray -Results $Results 
+
+
+    # Get App insights data
+    $AppInsights=(Get-ResourceByType -type 'microsoft.insights/components' -AccessToken $AccessToken).data
+
+
+    # Gather Subscription information
+    $Subs= (Invoke-ARMAPIQuery  "https://management.azure.com/subscriptions?api-version=2020-01-01").value
+
+    if ($FilteredSubscriptions.count -gt 0) {
+        $Subs = $Subs | where subscriptionId -In $FilteredSubscriptions
     }
 
 
-    $Resources=CreateResourceArray -Results $Results #| where Subscription -eq 'f263b677-361a-4ec3-91d6-c4e05012c36b'
-    AssessResources -Resources $Resources -HealthAlerts $HealthAlerts
-    $ResourceReport+=$Resources 
 
-}
+    # Process the Health alerts and assess them for validity
+    # Needs to happen first
+    $AssessedHealthAlerts=AssessHealthAlerts -Alerts $HealthAlerts
+
+    $Subscriptions=AssessSubscriptions -Subs $Subs 
 
 
-$ResourceReport | ft TypeDisplayName,Kind,name,AppInsights, subscription,AlertCoverage
+# Iterate through each defined resource type, get a list of resources, and assess them.
+    $ResourceReport=@()
+    $ResourceTypeHash.keys | ForEach-Object {
+
+       
+        $Results=Get-ResourceByType -type $_ -AccessToken $AccessToken -SubscriptionFilter $FilteredSubscriptions
+        
+
+
+        $Resources=CreateResourceArray -Results $Results #| where Subscription -eq 'f263b677-361a-4ec3-91d6-c4e05012c36b'
+        AssessResources -Resources $Resources -HealthAlerts $HealthAlerts
+        $ResourceReport+=$Resources 
+
+    }
+
+    $AlertsReport           = $AssessedHealthAlerts   
+
+    $SubsReport             = $Subscriptions
+    $AppServicePlanReport   = $ResourceReport | where Type -eq 'microsoft.web/serverfarms' | select id,TypeDisplayName,AlertCoverage,DiagnosticMetrics,DiagnosticLogs 
+    $WebappsReport          = $ResourceReport | where Type -ne 'microsoft.web/serverfarms' | select id,TypeDisplayName,AppInsights,DiagnosticMetrics,DiagnosticLogs, kind, resourcegroup
+    $HeaderTotals           = AccessTotals
+
+# Output reports to host
+
+    $AlertsReport 
+    $SubsReport
+    $AppServicePlanReport
+    $WebappsReport 
+    $HeaderTotals
+
+# Save to CSV
+
+    $AlertsReport           | Export-Csv ".\AlertsReport.csv" -NoTypeInformation
+    $SubsReport             | Export-Csv ".\SubscriptionsReport.csv" -NoTypeInformation
+    $AppServicePlanReport   | Export-Csv ".\AppServicePlanReport" -NoTypeInformation
+    $WebappsReport          | Export-Csv ".\AppReport.csv" -NoTypeInformation
+    
+    Write-Warning "Exported results to CSV files..."
+
 
 #Create workbook
 
+    #Create the JSON data for the queries
+    $JsonHealthAlerts        = ( $AlertsReport         | ConvertTo-Json -Compress)
+    $JsonSubscriptions       = ( $SubsReport           | ConvertTo-Json -Compress)
+    $JsonAppServicePlan      = ( $AppServicePlanReport | ConvertTo-Json -Compress)
+    $JsonWebapps             = ( $WebappsReport        | ConvertTo-Json -Compress)
 
-#Create the JSON data for the queries
-$JsonHealthAlerts=($AssessedHealthAlerts | select valid,id,actions,regions,incidenttype,subsriptions,servicesvalidfor | ConvertTo-Json -Compress)                   #-replace '"','\"'
-$JsonSubscriptions=($Subs | where alertcoverage -eq $null | select id,displayname,state | ConvertTo-Json -Compress)                                                 #-replace '"','\"'
-$JsonAppServicePlan=($ResourceReport | where Type -eq 'microsoft.web/serverfarms' | select id,TypeDisplayName,AlertCoverage | ConvertTo-Json -Compress)             #-replace '"','\"'
-$JsonWebapps=($ResourceReport | where Type -ne 'microsoft.web/serverfarms' | where AppInsights -ne "Enabled" | select id,TypeDisplayName,AppInsights, kind, resourcegroup | ConvertTo-Json -Compress) #-replace '"','\"'
 
+    <##Load the template
+    Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/luisfeliz79/AssessServiceHealthAlertsCoverage/main/WorkbookTemplate.json" -OutFile .\WorkbookTemplate.json
+    $Workbook=gc .\WorkbookTemplate.json -Raw | ConvertFrom-Json
 
-#Load the template
-$Workbook=gc .\WorkbookTemplate.json -Raw | ConvertFrom-Json
-
-$Workbook.items[1].content.query=@{version="1.0.0";content=$JsonSubscriptions} | ConvertTo-Json -Depth 99 -Compress
-$Workbook.items[3].content.query=@{version="1.0.0";content=$JsonHealthAlerts} | ConvertTo-Json -Depth 99 -Compress
-$Workbook.items[5].content.query=@{version="1.0.0";content=$JsonAppServicePlan} | ConvertTo-Json -Depth 99 -Compress
-$Workbook.items[7].content.query=@{version="1.0.0";content=$JsonWebapps} | ConvertTo-Json -Depth 99 -Compress
+    $Workbook.items[1].content.query=@{version="1.0.0";content=$JsonSubscriptions} | ConvertTo-Json -Depth 99 -Compress
+    $Workbook.items[3].content.query=@{version="1.0.0";content=$JsonHealthAlerts} | ConvertTo-Json -Depth 99 -Compress
+    $Workbook.items[5].content.query=@{version="1.0.0";content=$JsonAppServicePlan} | ConvertTo-Json -Depth 99 -Compress
+    $Workbook.items[7].content.query=@{version="1.0.0";content=$JsonWebapps} | ConvertTo-Json -Depth 99 -Compress
     
-$Workbook | ConvertTo-Json -Depth 99 | clip
+    $Workbook | ConvertTo-Json -Depth 99 | Out-File -FilePath .\CreatedWookbook.json
+    #>
+
+    $Counter=0
+    $AssessWorkbook=New-AzureWorkbook
+    $AssessWorkbook.items=@()
+
+    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Subscriptions without Service Health Alert Coverage**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSubscriptions
+
+    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Service Health Alerts Configuration**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonHealthAlerts
+
+
+    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **App Service plans - Service Health Alert Coverage**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonAppServicePlan
+
+
+    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Apps - Insights and Diagnostics**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonWebapps
+
+
+    $AssessWorkbook | ConvertTo-Json -Depth 99 | Out-File ".\AssessWorkbook.json"
+
+
+    Write-Warning "Exported Static workbook to .\AssessWorkbook.json"
+
+
+
+#endregion
+
+# Todo
+#  make this run nicely in Azure Shell
+
+
