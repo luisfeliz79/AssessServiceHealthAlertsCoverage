@@ -1,5 +1,8 @@
 ﻿#region Script Functions
 function Invoke-ResourceExplorerQuery ($KQL, $AccessToken) {
+    
+    $CompleteResult=@()
+    
     $headers=@{
 
         
@@ -13,7 +16,30 @@ function Invoke-ResourceExplorerQuery ($KQL, $AccessToken) {
 
     $Url="https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2021-03-01"
 
-    Invoke-RestMethod -Method POST -UseBasicParsing -Uri $Url -Headers $headers -Body $Payload -ContentType 'application/json' #-Verbose
+    $Result=Invoke-RestMethod -Method POST -UseBasicParsing -Uri $Url -Headers $headers -Body $Payload -ContentType 'application/json' #-Verbose
+
+    if ($Result.'$Skiptoken') {
+
+        while ($Result.'$Skiptoken') {
+
+                $CompleteResult+=$Result.data
+
+                $Payload=@{
+                    "Query"=$KQL
+                    "options"=[pscustomobject]@{
+                        '$skiptoken'=$($Result.'$skiptoken')
+                     }
+                } | ConvertTo-Json
+        
+                #Write-Warning $Payload
+
+                $Result=Invoke-RestMethod -Method POST -UseBasicParsing -Uri $Url -Headers $headers -Body $Payload -ContentType 'application/json' #-Verbose
+
+
+        }
+
+    }
+    return $CompleteResult
 }
 
 function Invoke-ARMAPIQuery ($Url) {
