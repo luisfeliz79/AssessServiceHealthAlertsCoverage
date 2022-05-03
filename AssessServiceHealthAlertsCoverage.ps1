@@ -18,12 +18,14 @@ function Invoke-ResourceExplorerQuery ($KQL, $AccessToken) {
 
     $Result=Invoke-RestMethod -Method POST -UseBasicParsing -Uri $Url -Headers $headers -Body $Payload -ContentType 'application/json' #-Verbose
 
+    $CompleteResult+=$Result.data
+
     if ($Result.'$Skiptoken') {
 
         while ($Result.'$Skiptoken') {
 
                 Write-Warning "Getting more results ..."
-                $CompleteResult+=$Result.data
+                
 
                 $Payload=@{
                     "Query"=$KQL
@@ -36,6 +38,7 @@ function Invoke-ResourceExplorerQuery ($KQL, $AccessToken) {
 
                 $Result=Invoke-RestMethod -Method POST -UseBasicParsing -Uri $Url -Headers $headers -Body $Payload -ContentType 'application/json' #-Verbose
 
+                $CompleteResult+=$Result.data
 
         }
 
@@ -71,7 +74,7 @@ $KQL=@"
 
 } else {
 
-
+Write-warning "Using Subscription Filter: $SubscriptionFilter"
 
 $KQL=@"
         resources | where type == '$type' | where subscriptionId matches regex "$($SubscriptionFilter -join '|')"
@@ -472,30 +475,34 @@ Function AssessResources ($Resources,$HealthAlerts) {
             $URL = "https://management.azure.com" + $Resource.ID + "/providers/Microsoft.Insights/diagnosticSettings?api-version=2021-05-01-preview"
             
             $DiagResults=Invoke-ARMAPIQuery -Url $URL 
+            
+            
 
             $tmpMetricCheck=0
             $tmpLogCheck=0
             $tmpLawIds=@()
             
-            $DiagResults | foreach {
+            $DiagResults.value | foreach {
 
-                if ($DiagResults.value.properties.metrics.count -gt 0 -and $result.value.properties.workspaceId.count -gt 0) {
+                if ($_.properties.metrics.count -gt 0 -and $_.properties.workspaceId.count -gt 0) {
                     $tmpMetricCheck++
+                    Write-warning "          - Metrics"
                 }
 
-                if ($DiagResults.value.properties.logs.count -gt 0 -and $result.value.properties.workspaceId.count -gt 0) {
+                if ($_.properties.logs.count -gt 0 -and $_.properties.workspaceId.count -gt 0) {
                     $tmpLogCheck++
+                    Write-warning "          - Logs"
                 }
 
-                if ($result.value.properties.workspaceId.count -gt 0) {
-                    $tmpLawIds+=$result.value.properties.workspaceId
+                if ($_.properties.workspaceId.count -gt 0) {
+                    $tmpLawIds+=$_.properties.workspaceId
                 }
 
             }
 
             
-            $Resource.DiagnosticMetrics=if ($tmpMetricCheck -gt 0) {$true} else {$false}
-            $Resource.DiagnosticLogs=if ($tmpLogCheck -gt 0) {$true} else {$false}
+            $Resource.DiagnosticMetrics=if ($tmpMetricCheck -gt 0) {$True} else {$False}
+            $Resource.DiagnosticLogs=if ($tmpLogCheck -gt 0) {$True} else {$False}
             $Resource.LogAnalyticsWorkspace=$tmpLawIds
 
         }
@@ -647,7 +654,7 @@ $ResourceTypeHash=@{
 
 #region MAIN
 
-$FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
+#$FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
 
 
 #Get Access token
@@ -669,11 +676,11 @@ $FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
 # Get Health Alerts
 
 
-    $Results=Get-ResourceByType -type 'microsoft.insights/activitylogalerts' -AccessToken $AccessToken -AppendKQLClause 'extend category = properties.condition.allOf[0].equals | where category == "ServiceHealth"'
+    $Results=Get-ResourceByType -type 'microsoft.insights/activitylogalerts' -AccessToken $AccessToken #-AppendKQLClause 'extend category = properties.condition.allOf[0].equals | where category == "ServiceHealth"'
 
     
 
-    $HealthAlerts=CreateHealthAlertsArray -Results $Results 
+    $HealthAlerts=CreateHealthAlertsArray -Results $Results  | where Category -eq "ServiceHealth"
 
 
     # Get App insights data
@@ -745,23 +752,11 @@ $FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
     $JsonWebapps             = ( $WebappsReport        | ConvertTo-Json -Compress)
 
 
-    <##Load the template
-    Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/luisfeliz79/AssessServiceHealthAlertsCoverage/main/WorkbookTemplate.json" -OutFile .\WorkbookTemplate.json
-    $Workbook=gc .\WorkbookTemplate.json -Raw | ConvertFrom-Json
-
-    $Workbook.items[1].content.query=@{version="1.0.0";content=$JsonSubscriptions} | ConvertTo-Json -Depth 99 -Compress
-    $Workbook.items[3].content.query=@{version="1.0.0";content=$JsonHealthAlerts} | ConvertTo-Json -Depth 99 -Compress
-    $Workbook.items[5].content.query=@{version="1.0.0";content=$JsonAppServicePlan} | ConvertTo-Json -Depth 99 -Compress
-    $Workbook.items[7].content.query=@{version="1.0.0";content=$JsonWebapps} | ConvertTo-Json -Depth 99 -Compress
-    
-    $Workbook | ConvertTo-Json -Depth 99 | Out-File -FilePath .\CreatedWookbook.json
-    #>
-
     $Counter=0
     $AssessWorkbook=New-AzureWorkbook
     $AssessWorkbook.items=@()
 
-    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Subscriptions without Service Health Alert Coverage**"
+    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Subscriptions - Service Health Alert Coverage**"
     $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSubscriptions
 
     $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Service Health Alerts Configuration**"
@@ -779,7 +774,9 @@ $FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
     $AssessWorkbook | ConvertTo-Json -Depth 99 | Out-File ".\AssessWorkbook.json"
 
 
-    Write-Warning "Exported Static workbook to .\AssessWorkbook.json"
+    Write-Warning "Exported Static workbook to .\AssessWorkbook.json\n"
+    Write-Warning "Azure Portal > Azure Monitor > Workbooks -> New"
+    Write-Warning "Copy and Paste the contents of AssessWorkbook.json into the Advanced Editor section"
 
 
 
