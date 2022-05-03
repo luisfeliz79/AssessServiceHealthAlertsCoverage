@@ -22,6 +22,7 @@ function Invoke-ResourceExplorerQuery ($KQL, $AccessToken) {
 
         while ($Result.'$Skiptoken') {
 
+                Write-Warning "Getting more results ..."
                 $CompleteResult+=$Result.data
 
                 $Payload=@{
@@ -96,7 +97,7 @@ return (Invoke-ResourceExplorerQuery -AccessToken $AccessToken -KQL $KQL)
 
 Function CreateHealthAlertsArray ($results) {
 
-$results.data | foreach {
+$results | foreach {
 
 
         # Ensure clean variables
@@ -170,7 +171,7 @@ $results.data | foreach {
 Function CreateResourceArray ($results) {
 #Creates an array of resources using a common schema.
 
-$results.data | foreach {
+$results | foreach {
 
         # Create a PS Object and return it
         [PSCustomObject]@{
@@ -676,7 +677,7 @@ $FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
 
 
     # Get App insights data
-    $AppInsights=(Get-ResourceByType -type 'microsoft.insights/components' -AccessToken $AccessToken).data
+    $AppInsights=(Get-ResourceByType -type 'microsoft.insights/components' -AccessToken $AccessToken)
 
 
     # Gather Subscription information
@@ -718,13 +719,13 @@ $FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
     $HeaderTotals           = AccessTotals
 
 # Output reports to host
-
+<#
     $AlertsReport 
     $SubsReport
     $AppServicePlanReport
     $WebappsReport 
     $HeaderTotals
-
+#>
 # Save to CSV
 
     $AlertsReport           | Export-Csv ".\AlertsReport.csv" -NoTypeInformation
