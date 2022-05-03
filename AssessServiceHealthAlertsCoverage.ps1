@@ -416,7 +416,8 @@ Function AssessSubscriptions ($Subs) {
             Name=$Sub.DisplayName
             State=$Sub.State
             AlertCoverage=$Coverage
-            CoveredBy=($AlertsThatCoverMe.AlertRule -split '/')[-1] -join ', '
+            CoveredBy=($AlertsThatCoverMe.AlertRule | Foreach-Object { ($_ -split '/')[-1] }) -join ', '
+            SubscriptionID=$Sub.subscriptionId
 
         }
         
@@ -486,12 +487,12 @@ Function AssessResources ($Resources,$HealthAlerts) {
 
                 if ($_.properties.metrics.count -gt 0 -and $_.properties.workspaceId.count -gt 0) {
                     $tmpMetricCheck++
-                    Write-warning "          - Metrics"
+                    #Write-warning "          - Metrics"
                 }
 
                 if ($_.properties.logs.count -gt 0 -and $_.properties.workspaceId.count -gt 0) {
                     $tmpLogCheck++
-                    Write-warning "          - Logs"
+                    #Write-warning "          - Logs"
                 }
 
                 if ($_.properties.workspaceId.count -gt 0) {
@@ -646,6 +647,21 @@ $ResourceTypeHash=@{
 
     }
 
+
+    'microsoft.appplatform/spring'=@{
+                Name="Azure Spring Cloud"
+                HealthSelections=@(
+                    'Azure Spring Cloud'       
+                    )
+                InsightsCheck=$true
+                AlertCheck=$true
+                DiagCheck=$true
+
+    }
+
+
+
+
     
 }
 #endregion
@@ -710,19 +726,20 @@ $ResourceTypeHash=@{
        
         $Results=Get-ResourceByType -type $_ -AccessToken $AccessToken -SubscriptionFilter $FilteredSubscriptions
         
-
-
-        $Resources=CreateResourceArray -Results $Results #| where Subscription -eq 'f263b677-361a-4ec3-91d6-c4e05012c36b'
-        AssessResources -Resources $Resources -HealthAlerts $HealthAlerts
-        $ResourceReport+=$Resources 
-
+        if ($Results -ne $null) {
+            $Resources=CreateResourceArray -Results $Results #| where Subscription -eq 'f263b677-361a-4ec3-91d6-c4e05012c36b'
+            AssessResources -Resources $Resources -HealthAlerts $HealthAlerts
+            $ResourceReport+=$Resources 
+        }
     }
 
     $AlertsReport           = $AssessedHealthAlerts   
 
     $SubsReport             = $Subscriptions
-    $AppServicePlanReport   = $ResourceReport | where Type -eq 'microsoft.web/serverfarms' | select id,TypeDisplayName,AlertCoverage,DiagnosticMetrics,DiagnosticLogs 
-    $WebappsReport          = $ResourceReport | where Type -ne 'microsoft.web/serverfarms' | select id,TypeDisplayName,AppInsights,DiagnosticMetrics,DiagnosticLogs, kind, resourcegroup
+    $AppServicePlanReport   = $ResourceReport | where Type -eq 'microsoft.web/serverfarms' | select id,TypeDisplayName,AlertCoverage,DiagnosticMetrics,DiagnosticLogs,subscription 
+    $WebappsReport          = $ResourceReport | where Type -like '*microsoft.web/sites*' | select id,TypeDisplayName,AppInsights,DiagnosticMetrics,DiagnosticLogs, kind, resourcegroup,subscription
+    $SpringCloudReport      = $ResourceReport | where Type -eq 'microsoft.appplatform/spring' | select id,TypeDisplayName,AlertCoverage,AppInsights,DiagnosticMetrics,DiagnosticLogs, kind, resourcegroup,subscription
+
     $HeaderTotals           = AccessTotals
 
 # Output reports to host
@@ -739,6 +756,10 @@ $ResourceTypeHash=@{
     $SubsReport             | Export-Csv ".\SubscriptionsReport.csv" -NoTypeInformation
     $AppServicePlanReport   | Export-Csv ".\AppServicePlanReport" -NoTypeInformation
     $WebappsReport          | Export-Csv ".\AppReport.csv" -NoTypeInformation
+
+    if ($SpringCloudReport -ne $null) {
+        $SpringCloudReport      | Export-Csv ".\SpringCloudReport.csv" -NoTypeInformation
+    }
     
     Write-Warning "Exported results to CSV files..."
 
@@ -746,37 +767,42 @@ $ResourceTypeHash=@{
 #Create workbook
 
     #Create the JSON data for the queries
-    $JsonHealthAlerts        = ( $AlertsReport         | ConvertTo-Json -Compress)
-    $JsonSubscriptions       = ( $SubsReport           | ConvertTo-Json -Compress)
-    $JsonAppServicePlan      = ( $AppServicePlanReport | ConvertTo-Json -Compress)
-    $JsonWebapps             = ( $WebappsReport        | ConvertTo-Json -Compress)
+    $JsonHealthAlerts        = ( $AlertsReport         | ConvertTo-Json -Compress )
+    $JsonSubscriptions       = ( $SubsReport           | ConvertTo-Json -Compress )
 
 
     $Counter=0
     $AssessWorkbook=New-AzureWorkbook
     $AssessWorkbook.items=@()
 
+    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "Report created $(Get-Date)"
     $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Subscriptions - Service Health Alert Coverage**"
     $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSubscriptions
-
     $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Service Health Alerts Configuration**"
     $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonHealthAlerts
 
 
+    $JsonAppServicePlan      = ( $AppServicePlanReport | ConvertTo-Json -Compress )
+    $JsonWebapps             = ( $WebappsReport        | ConvertTo-Json -Compress )
+    
     $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **App Service plans - Service Health Alert Coverage**"
     $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonAppServicePlan
-
-
     $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Apps - Insights and Diagnostics**"
     $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonWebapps
 
+    if ($SpringCloudReport -ne $null) {
+        $JsonSpringCloud         = ( $SpringCloudReport    | ConvertTo-Json -Compress )
+        $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Spring Cloud - Alerts, Insights and Diagnostics**"
+        $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSpringCloud
+    }
 
     $AssessWorkbook | ConvertTo-Json -Depth 99 | Out-File ".\AssessWorkbook.json"
 
 
     Write-Warning "Exported Static workbook to .\AssessWorkbook.json\n"
-    Write-Warning "Azure Portal > Azure Monitor > Workbooks -> New"
-    Write-Warning "Copy and Paste the contents of AssessWorkbook.json into the Advanced Editor section"
+    Write-Warning "To View it, follow these steps:"
+    Write-Warning " Azure Portal > Azure Monitor > Workbooks -> New"
+    Write-Warning " Copy and Paste the contents of AssessWorkbook.json into the Advanced Editor section"
 
 
 
