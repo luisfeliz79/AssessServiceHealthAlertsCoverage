@@ -749,7 +749,7 @@ $ResourceTypeHash=@{
     $AppServicePlanReport
     $WebappsReport 
     $HeaderTotals
-#>
+
 # Save to CSV
 
     $AlertsReport           | Export-Csv ".\AlertsReport.csv" -NoTypeInformation
@@ -762,7 +762,7 @@ $ResourceTypeHash=@{
     }
     
     Write-Warning "Exported results to CSV files..."
-
+#>
 
 #Create workbook
 
@@ -799,7 +799,7 @@ $ResourceTypeHash=@{
     $AssessWorkbook | ConvertTo-Json -Depth 99 | Out-File ".\AssessWorkbook.json"
 
 
-    Write-Warning "Exported Static workbook to .\AssessWorkbook.json\n"
+    Write-Warning "Exported Static workbook to .\AssessWorkbook.json"
     Write-Warning "To View it, follow these steps:"
     Write-Warning " Azure Portal > Azure Monitor > Workbooks -> New"
     Write-Warning " Copy and Paste the contents of AssessWorkbook.json into the Advanced Editor section"
