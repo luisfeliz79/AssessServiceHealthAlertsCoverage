@@ -305,6 +305,8 @@ Function Add-AzureWorkbookJSONQuery ($JsonQuery) {
 Function AssessHealthAlerts ($Alerts) {
 
 
+    if ($Alerts.count -eq 0 -or $ALerts -eq $null) {Write-Warning "No Health Alerts found!";break}
+
 
     # Loop through all alerts
     $Alerts | ForEach-Object {
@@ -714,7 +716,7 @@ $ResourceTypeHash=@{
 
     # Process the Health alerts and assess them for validity
     # Needs to happen first
-    $AssessedHealthAlerts=AssessHealthAlerts -Alerts $HealthAlerts
+    $AssessedHealthAlerts=AssessHealthAlerts -Alerts $HealthAlertss
 
     $Subscriptions=AssessSubscriptions -Subs $Subs 
 
