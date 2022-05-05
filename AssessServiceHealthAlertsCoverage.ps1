@@ -716,7 +716,7 @@ $ResourceTypeHash=@{
 
     # Process the Health alerts and assess them for validity
     # Needs to happen first
-    $AssessedHealthAlerts=AssessHealthAlerts -Alerts $HealthAlertss
+    $AssessedHealthAlerts=AssessHealthAlerts -Alerts $HealthAlerts
 
     $Subscriptions=AssessSubscriptions -Subs $Subs 
 
