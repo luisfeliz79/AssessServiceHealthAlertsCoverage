@@ -5,10 +5,10 @@ The output file is a the JSON code for an Azure Monitor Workbook
 
 
 
-# *How to use this script*
+## *How to use this script*
 
 
-## In Azure Shell (Bash)
+### In Azure Shell (Bash)
 
 Execute this:
 
@@ -18,7 +18,7 @@ Execute this:
 	pwsh AssessServiceHealthAlertsCoverage.ps1
 ```
 
-## In Linux Bash (assumes Powershell is installed, if not see https://aka.ms/azurepowershell)
+### In Linux Bash
 
 Requires
 - Linux Powershell ( https://aka.ms/powershell )
@@ -27,31 +27,35 @@ Requires
 	--or--
 - Azure CLI	            ( https://aka.ms/azcli )
 
+
+Execute this:
 ```
 	wget https://raw.githubusercontent.com/luisfeliz79/AssessServiceHealthAlertsCoverage/main/AssessServiceHealthAlertsCoverage.ps1
 
 	pwsh AssessServiceHealthAlertsCoverage.ps1
 ```
 
-## In Windows
+### In Windows
 
 Requires:
 - Azure PowerShell Module ( https://aka.ms/azurepowershell )
 
+
+Execute this:
 ```
 	Invoke-WebRequest -Uri https://raw.githubusercontent.com/luisfeliz79/AssessServiceHealthAlertsCoverage/main/AssessServiceHealthAlertsCoverage.ps1 -OutFile AssessServiceHealthAlertsCoverage.ps1
 
 	PowerShell -ExecutionPolicy Bypass -file AssessServiceHealthAlertsCoverage.ps1
 ```
 
-# Viewing the resulting Azure Workbook
+## Viewing the resulting Azure Workbook
 
 An Azure Workbook with static data is created as a result of this script.
 To use it:
-	- Go to https://portal.azure.com and Search for Monitor
-	- In the Monitor blade, click on Workbooks and the New button
-	- Click on the Advanced Editor icon </>
-	- Copy and paste the JSON code into this screen and apply
+- Go to https://portal.azure.com and Search for Monitor
+- In the Monitor blade, click on Workbooks and the New button
+- Click on the Advanced Editor icon </>
+- Copy and paste the JSON code into this screen and apply
 
 
 
