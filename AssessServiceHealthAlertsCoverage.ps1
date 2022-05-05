@@ -239,6 +239,69 @@ Function CreateDataTable ($Data,$Props) {
 $DTComplete
 }
 
+Function GetAccessToken() {
+
+#Get Access token
+#Using PowerShell Az Module
+
+    #Check for AZ PowerShell Module first
+    $CheckModule=get-module Az.Accounts -ListAvailable
+    if ($CheckModule.Name -eq 'Az.Accounts') {
+        Write-warning "Found Azure PowerShell Module."
+            
+        $currentAzureContext = Get-AzContext
+        $azureRmProfile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile;
+        $profileClient = New-Object Microsoft.Azure.Commands.ResourceManager.Common.RMProfileClient($azureRmProfile);
+        $AccessToken=$profileClient.AcquireAccessToken($currentAzureContext.Subscription.TenantId).AccessToken;
+
+        if ($AccessToken -eq $null -or $AccessToken -eq "") {
+            Connect-AzAccount
+
+            $currentAzureContext = Get-AzContext
+            $azureRmProfile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile;
+            $profileClient = New-Object Microsoft.Azure.Commands.ResourceManager.Common.RMProfileClient($azureRmProfile);
+            $AccessToken=$profileClient.AcquireAccessToken($currentAzureContext.Subscription.TenantId).AccessToken;
+           
+            if ($AccessToken -eq $null -or $AccessToken -eq "") {
+                Write-warning "Could not obtain access token, quitting...";exit
+
+            }
+
+
+        }
+    } else {
+        #If the PowerShell Module was not found, attempt the AZ CLI Utility
+
+        #Check if it is installed:
+        $azcli=Start-Process "az" -NoNewWindow -ErrorAction SilentlyContinue -PassThru -Wait
+        if ($azcli -ne $null) {
+            Write-Warning "Found AZ CLI"
+            $AccessToken=(az account get-access-token | convertfrom-json).accessToken
+        
+
+            if ($AccessToken -eq $null -or $AccessToken -eq "") {
+                    Write-Warning "Please run az login first";exit
+            }               
+     
+        }
+   }
+
+   if ($AccessToken -eq $null -or $AccessToken -eq "") {
+                    Write-warning "Could not obtain access token..";
+                    Write-warning "Before you can use this script, you must install either"
+                    Write-warning "      Azure PowerShell    https://aka.ms/azurepowershell"
+                    Write-warning "                -- or --"
+                    Write-warning "      Azure CLI           https://aka.ms/azcli"
+                    exit
+   }
+           
+   
+   # If we made it this far, then
+   Write-Warning "Got access token"     
+   return $AccessToken
+
+}
+
 #endregion
 
 #region Workbooks_Functions
@@ -675,13 +738,11 @@ $ResourceTypeHash=@{
 #$FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
 
 
-#Get Access token
-#Using PowerShell Az Module
 
-    $currentAzureContext = Get-AzContext
-    $azureRmProfile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile;
-    $profileClient = New-Object Microsoft.Azure.Commands.ResourceManager.Common.RMProfileClient($azureRmProfile);
-    $AccessToken=$profileClient.AcquireAccessToken($currentAzureContext.Subscription.TenantId).AccessToken;
+    $AccessToken = GetAccessToken
+   
+
+
 
 
 #Using the AZ Util
