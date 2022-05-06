@@ -2,6 +2,13 @@
   "version": "Notebook/1.0",
   "items": [
     {
+      "type": 1,
+      "content": {
+        "json": "# Service Health Alerts assessment\r\n\r\nUse this workbook to analyze your existing Service Health Alert rules, and find out which subscriptions may not covered for alerts.\r\n"
+      },
+      "name": "text - 7"
+    },
+    {
       "type": 9,
       "content": {
         "version": "KqlParameterItem/1.0",
@@ -125,7 +132,8 @@
             "jsonData": "[{\"value\":\"\",\"label\":\"Show All\",\"selected\":true},{\"value\":\"None\",\"label\":\"No Coverage\"}]",
             "timeContext": {
               "durationMs": 86400000
-            }
+            },
+            "value": "None"
           }
         ],
         "style": "pills",
@@ -169,14 +177,50 @@
       "name": "query - 1"
     },
     {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "f16a1b94-5a3e-438e-856d-c3c4f649cb27",
+            "version": "KqlParameterItem/1.0",
+            "name": "ResourceTypeFilter",
+            "label": "Resource Type",
+            "type": 7,
+            "multiSelect": true,
+            "quote": "",
+            "delimiter": "|",
+            "value": [
+              "value::all"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::all"
+              ],
+              "includeAll": true,
+              "selectAllValue": "All",
+              "showDefault": false
+            },
+            "timeContext": {
+              "durationMs": 86400000
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters - 8"
+    },
+    {
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "resources | where type == 'microsoft.web/serverfarms'\r\n| join kind=leftouter\r\n(\r\nresourcecontainers\r\n| where type == 'microsoft.resources/subscriptions'\r\n| extend subscriptionId = tostring(split(id,\"/\")[2])\r\n| join\r\n(\r\nresources \r\n| where type == 'microsoft.insights/activitylogalerts'\r\n| extend Category = properties.condition.allOf[0].equals\r\n| where  Category == 'ServiceHealth'\r\n| extend Alert = name\r\n| project Alert,subscriptionId\r\n) on subscriptionId\r\n| summarize make_set(Alert) by id,name,subscriptionId\r\n) on subscriptionId\r\n| extend AppServicePlan=id\r\n| extend Name = name\r\n| extend AlertRules = case(isempty(set_Alert[0]) == true,\"None\",set_Alert)\r\n| where AlertRules startswith \"{Coverage}\"\r\n| project AppServicePlan,resourceGroup,AlertRules,subscriptionId",
+        "query": "resources\r\n| join kind=leftouter\r\n(\r\nresourcecontainers\r\n| where type == 'microsoft.resources/subscriptions'\r\n| extend subscriptionId = tostring(split(id,\"/\")[2])\r\n| join\r\n(\r\nresources \r\n| where type == 'microsoft.insights/activitylogalerts'\r\n| extend Category = properties.condition.allOf[0].equals\r\n| where  Category == 'ServiceHealth'\r\n| extend Alert = name\r\n| project Alert,subscriptionId\r\n) on subscriptionId\r\n| summarize make_set(Alert) by id,name,subscriptionId\r\n) on subscriptionId\r\n| extend Resource=id\r\n| extend Name = name\r\n| extend AlertRules = case(isempty(set_Alert[0]) == true,\"None\",set_Alert)\r\n| where subscriptionId matches regex tostring(\"{SubscriptionPicker}\")\r\n| where AlertRules startswith \"{Coverage}\"\r\n| where type matches regex tostring(\"{ResourceTypeFilter}\") or tostring(\"{ResourceTypeFilter}\") == \"All\"\r\n| project Resource,resourceGroup,AlertRules,subscriptionId,type\r\n\r\n\r\n\r\n\r\n\r\n",
         "size": 0,
         "showAnalytics": true,
-        "title": "App Service Plans Alert Coverage",
-        "noDataMessage": "No App Service plans found",
+        "title": "Resource Alert Coverage",
+        "noDataMessage": "No Resources found",
         "noDataMessageStyle": 4,
         "showRefreshButton": true,
         "showExportToExcel": true,
@@ -187,20 +231,6 @@
         ],
         "gridSettings": {
           "formatters": [
-            {
-              "columnMatch": "id",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "20%"
-              }
-            },
-            {
-              "columnMatch": "name",
-              "formatter": 0,
-              "formatOptions": {
-                "customColumnWidthSetting": "20%"
-              }
-            },
             {
               "columnMatch": "resourceGroup",
               "formatter": 0,
@@ -216,6 +246,20 @@
               }
             },
             {
+              "columnMatch": "id",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "name",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
               "columnMatch": "set_Alert",
               "formatter": 0,
               "formatOptions": {
@@ -223,7 +267,7 @@
               }
             }
           ],
-          "rowLimit": 1000,
+          "rowLimit": 10000,
           "filter": true
         }
       },
