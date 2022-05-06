@@ -362,7 +362,7 @@ Function Add-AzureWorkbookTextItem ($MarkDownString) {
       $Counter++
 }
 
-Function Add-AzureWorkbookJSONQuery ($JsonQuery) {
+Function Add-AzureWorkbookJSONQuery ($JsonQuery,$Title) {
 
       #Wrap the Json query into the needed object
       $WrappedJsonQuery=$(@{version="1.0.0";content=$JsonQuery} | ConvertTo-Json -Depth 99 -Compress)
@@ -376,6 +376,7 @@ Function Add-AzureWorkbookJSONQuery ($JsonQuery) {
             "query"         = $WrappedJsonQuery
             "size"          = 0
             "showExportToExcel" = "true"
+            "title"             = $Title
             "queryType"     = 8
             "gridSettings"  = [pscustomobject]@{
                  "rowLimit" = 1000
@@ -763,26 +764,16 @@ $ResourceTypeHash=@{
 
 #region MAIN
 
-#$FilteredSubscriptions=@("f263b677-361a-4ec3-91d6-c4e05012c36b")
+# Enter a list of comma delimited subscription IDs here to scope the scan.
+# $FilteredSubscriptions=@("xxxxxxxxxxxx","xxxxxxxxxxxx")
 
 
 
-    $AccessToken = GetAccessToken
+# Obtain an Access token
+$AccessToken = GetAccessToken
    
 
-
-
-
-#Using the AZ Util
-#if ($AccessToken -eq $null) {
-#    $AccessToken=(az account get-access-token | convertfrom-json).accessToken
-#}
-
-
-
 # Get Health Alerts
-
-
     $Results=Get-ResourceByType -type 'microsoft.insights/activitylogalerts' -AccessToken $AccessToken #-AppendKQLClause 'extend category = properties.condition.allOf[0].equals | where category == "ServiceHealth"'
 
     
@@ -790,11 +781,11 @@ $ResourceTypeHash=@{
     $HealthAlerts=CreateHealthAlertsArray -Results $Results  | where Category -eq "ServiceHealth"
 
 
-    # Get App insights data
+# Get App insights data
     $AppInsights=(Get-ResourceByType -type 'microsoft.insights/components' -AccessToken $AccessToken)
 
 
-    # Gather Subscription information
+# Gather Subscription information
     $Subs= (Invoke-ARMAPIQuery  "https://management.azure.com/subscriptions?api-version=2020-01-01").value
 
     if ($FilteredSubscriptions.count -gt 0) {
@@ -866,30 +857,30 @@ $ResourceTypeHash=@{
     $AssessWorkbook=New-AzureWorkbook
     $AssessWorkbook.items=@()
 
-    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "Report created $(Get-Date)"
-    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Subscriptions - Service Health Alert Coverage**"
-    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSubscriptions
-    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Service Health Alerts Configuration**"
-    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonHealthAlerts
+    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "This is a static report, and it was created $(Get-Date)"
+    #$AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Subscriptions - Service Health Alert Coverage**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSubscriptions -Title "Subscriptions - Service Health Alert Coverage"
+    #$AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Service Health Alerts Configuration**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonHealthAlerts -Title "Service Health Alerts Configuration"
 
 
     $JsonAppServicePlan      = ( $AppServicePlanReport | ConvertTo-Json -Compress )
     $JsonWebapps             = ( $WebappsReport        | ConvertTo-Json -Compress )
     
-    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **App Service plans - Service Health Alert Coverage**"
-    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonAppServicePlan
-    $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Apps - Insights and Diagnostics**"
-    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonWebapps
+    #$AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **App Service plans - Service Health Alert Coverage**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonAppServicePlan -Title "App Service plans - Service Health Alert Coverage"
+    #$AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Apps - Insights and Diagnostics**"
+    $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonWebapps -Title "Apps - Insights and Diagnostics"
 
     if ($SpringCloudReport -ne $null) {
         $JsonSpringCloud         = ( $SpringCloudReport    | ConvertTo-Json -Compress )
-        $AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Spring Cloud - Alerts, Insights and Diagnostics**"
-        $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSpringCloud
+        #$AssessWorkbook.items+=Add-AzureWorkbookTextItem -MarkDownString "# **Spring Cloud - Alerts, Insights and Diagnostics**"
+        $AssessWorkbook.items+=Add-AzureWorkbookJSONQuery -JsonQuery $JsonSpringCloud -Title "Spring Cloud - Alerts, Insights and Diagnostics"
     }
 
     $AssessWorkbook | ConvertTo-Json -Depth 99 | Out-File ".\AssessWorkbook.json"
 
-
+    Write-Warning ""
     Write-Warning "Exported Static workbook to .\AssessWorkbook.json"
     Write-Warning "To View it, follow these steps:"
     Write-Warning " Azure Portal > Azure Monitor > Workbooks -> New"
@@ -898,8 +889,5 @@ $ResourceTypeHash=@{
 
 
 #endregion
-
-# Todo
-#  make this run nicely in Azure Shell
 
 

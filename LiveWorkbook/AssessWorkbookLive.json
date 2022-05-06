@@ -1,0 +1,245 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "resources \r\n| where type == 'microsoft.insights/activitylogalerts'\r\n| extend Category = properties.condition.allOf[0].equals\r\n| where  Category == 'ServiceHealth'\r\n| extend Action = strcat(split(properties.actions.actionGroups[0].actionGroupId,'/')[-1],\" \",split(properties.actions.actionGroups[1].actionGroupId,'/')[-1],\" \",split(properties.actions.actionGroups[2].actionGroupId,'/')[-1])\r\n| extend Services = case (properties.condition.allOf[1].field == 'properties.impactedServices[*].ServiceName',properties.condition.allOf[1].containsAny,properties.condition.allOf[2].field == 'properties.impactedServices[*].ServiceName',properties.condition.allOf[2].containsAny,properties.condition.allOf[3].field == 'properties.impactedServices[*].ServiceName',properties.condition.allOf[3].containsAny,properties.condition.allOf[4].field == 'properties.impactedServices[*].ServiceName',properties.condition.allOf[4].containsAny,properties.condition.allOf[5].field == 'properties.impactedServices[*].ServiceName',properties.condition.allOf[5].containsAny,\"All\")                                    \r\n| extend Region = case (properties.condition.allOf[1].field == 'properties.impactedServices[*].ImpactedRegions[*].RegionName',properties.condition.allOf[1].containsAny,properties.condition.allOf[2].field == 'properties.impactedServices[*].ImpactedRegions[*].RegionName',properties.condition.allOf[2].containsAny,properties.condition.allOf[3].field == 'properties.impactedServices[*].ImpactedRegions[*].RegionName',properties.condition.allOf[3].containsAny,properties.condition.allOf[4].field == 'properties.impactedServices[*].ImpactedRegions[*].RegionName',properties.condition.allOf[4].containsAny,properties.condition.allOf[5].field == 'properties.impactedServices[*].ImpactedRegions[*].RegionName',properties.condition.allOf[5].containsAny,\"All\")                                    \r\n| extend EventTypesTmp = parse_json(case (properties.condition.allOf[5].anyOf[0].field=='properties.incidentType',properties.condition.allOf[5].anyOf,properties.condition.allOf[4].anyOf[0].field=='properties.incidentType',properties.condition.allOf[4].anyOf,properties.condition.allOf[3].anyOf[0].field=='properties.incidentType',properties.condition.allOf[3].anyOf,properties.condition.allOf[2].anyOf[0].field=='properties.incidentType',properties.condition.allOf[2].anyOf,properties.condition.allOf[1].anyOf[0].field=='properties.incidentType' ,properties.condition.allOf[1].anyOf,\"All\"))\r\n| extend EventTypes0 = case (EventTypesTmp[0].field=='properties.incidentType',EventTypesTmp[0].equals,'')\r\n| extend EventTypes1 = case (EventTypesTmp[1].field=='properties.incidentType',EventTypesTmp[1].equals,'')\r\n| extend EventTypes2 = case (EventTypesTmp[2].field=='properties.incidentType',EventTypesTmp[2].equals,'')\r\n| extend EventTypes3 = case (EventTypesTmp[3].field=='properties.incidentType',EventTypesTmp[3].equals,'')\r\n| extend EventTypesTmp2 = pack(EventTypes0,EventTypes1,EventTypes2,EventTypes3)\r\n| extend EventTypes = case (isempty(EventTypes0),\"All\",EventTypesTmp2)\r\n| extend AlertRule = id\r\n| project AlertRule,Services,Region,EventTypes,Action,subscriptionId",
+        "size": 0,
+        "showAnalytics": true,
+        "title": "Service Health Alert Rules Summary",
+        "noDataMessage": "No Service Health Alert Rules Found",
+        "noDataMessageStyle": 4,
+        "showRefreshButton": true,
+        "showExportToExcel": true,
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "value::selected"
+        ],
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "AlertRule",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "Services",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "Region",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "EventTypes",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "subscriptionId",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            }
+          ],
+          "rowLimit": 1000,
+          "filter": true
+        },
+        "sortBy": []
+      },
+      "name": "query - 0"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "95e7c9e8-af33-4d56-830e-b9612ac8461a",
+            "version": "KqlParameterItem/1.0",
+            "name": "Coverage",
+            "label": "Alert Rule Coverage",
+            "type": 2,
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "jsonData": "[{\"value\":\"\",\"label\":\"Show All\",\"selected\":true},{\"value\":\"None\",\"label\":\"No Coverage\"}]",
+            "timeContext": {
+              "durationMs": 86400000
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters - 4"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "resourcecontainers\r\n| where type == 'microsoft.resources/subscriptions'\r\n| extend subscriptionId = tostring(split(id,\"/\")[2])\r\n| join kind=leftouter\r\n(\r\nresources \r\n| where type == 'microsoft.insights/activitylogalerts'\r\n| extend Category = properties.condition.allOf[0].equals\r\n| where  Category == 'ServiceHealth'\r\n| extend Alert = name\r\n| project Alert,subscriptionId\r\n) on subscriptionId\r\n| summarize make_set(Alert) by id,name\r\n| extend Subscription = id\r\n| extend Name = name\r\n| extend CoveredBy = case(isempty(set_Alert[0]) == true,\"None\",set_Alert)\r\n//| where CoveredBy matches regex \"{Coverage}\"\r\n| where CoveredBy startswith \"{Coverage}\"\r\n| project Subscription,Name,CoveredBy\r\n",
+        "size": 0,
+        "showAnalytics": true,
+        "title": "Subscriptions Service Health Alert Coverage",
+        "showRefreshButton": true,
+        "showExportToExcel": true,
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "value::all"
+        ],
+        "gridSettings": {
+          "rowLimit": 1000,
+          "filter": true,
+          "sortBy": [
+            {
+              "itemKey": "CoveredBy",
+              "sortOrder": 1
+            }
+          ]
+        },
+        "sortBy": [
+          {
+            "itemKey": "CoveredBy",
+            "sortOrder": 1
+          }
+        ]
+      },
+      "name": "query - 1"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "resources | where type == 'microsoft.web/serverfarms'\r\n| join kind=leftouter\r\n(\r\nresourcecontainers\r\n| where type == 'microsoft.resources/subscriptions'\r\n| extend subscriptionId = tostring(split(id,\"/\")[2])\r\n| join\r\n(\r\nresources \r\n| where type == 'microsoft.insights/activitylogalerts'\r\n| extend Category = properties.condition.allOf[0].equals\r\n| where  Category == 'ServiceHealth'\r\n| extend Alert = name\r\n| project Alert,subscriptionId\r\n) on subscriptionId\r\n| summarize make_set(Alert) by id,name,subscriptionId\r\n) on subscriptionId\r\n| extend AppServicePlan=id\r\n| extend Name = name\r\n| extend AlertRules = case(isempty(set_Alert[0]) == true,\"None\",set_Alert)\r\n| where AlertRules startswith \"{Coverage}\"\r\n| project AppServicePlan,resourceGroup,AlertRules,subscriptionId",
+        "size": 0,
+        "showAnalytics": true,
+        "title": "App Service Plans Alert Coverage",
+        "noDataMessage": "No App Service plans found",
+        "noDataMessageStyle": 4,
+        "showRefreshButton": true,
+        "showExportToExcel": true,
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "value::all"
+        ],
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "id",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "name",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "resourceGroup",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "subscriptionId",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            },
+            {
+              "columnMatch": "set_Alert",
+              "formatter": 0,
+              "formatOptions": {
+                "customColumnWidthSetting": "20%"
+              }
+            }
+          ],
+          "rowLimit": 1000,
+          "filter": true
+        }
+      },
+      "name": "query - 4"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "258875f3-81b7-4499-8770-b796025a261c",
+            "version": "KqlParameterItem/1.0",
+            "name": "AppInsightsStatus",
+            "label": "AppInsights Status",
+            "type": 2,
+            "value": "",
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "jsonData": "[{\"value\":\"All\",\"label\":\"Show All\",\"selected\":true},{\"value\":\"\",\"label\":\"App Insights Disabled\"}]",
+            "timeContext": {
+              "durationMs": 86400000
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters - 5"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "resources\r\n| where type == 'microsoft.web/sites' or type == 'microsoft.web/sites/slots'\r\n| join kind=leftouter\r\n(\r\nresources\r\n| where type == 'microsoft.insights/components'\r\n| extend im = properties.IngestionMode\r\n) on name\r\n| extend AppInsights = im\r\n| extend WebAppOrSlot = id\r\n| extend Name = name\r\n| where AppInsights == \"\" or \"All\" == \"{AppInsightsStatus}\"\r\n| project WebAppOrSlot,Name,AppInsights,type,resourceGroup,location,subscriptionId",
+        "size": 0,
+        "showAnalytics": true,
+        "title": "Webapps or Slots AppInsights status",
+        "noDataMessage": "No Webapps or Slots",
+        "noDataMessageStyle": 4,
+        "showRefreshButton": true,
+        "showExportToExcel": true,
+        "queryType": 1,
+        "resourceType": "microsoft.resourcegraph/resources",
+        "crossComponentResources": [
+          "value::all"
+        ],
+        "gridSettings": {
+          "rowLimit": 1000,
+          "filter": true
+        }
+      },
+      "name": "query - 3"
+    }
+  ],
+  "fallbackResourceIds": [
+    "azure monitor"
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
